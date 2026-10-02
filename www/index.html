@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>مراسلة الأولياء</title>
+<style>
+:root{--g:#0f766e;--bg:#f4f7f6;--c:#fff;--t:#1c2a28;--m:#64748b;--b:#d7e0de}
+@media(prefers-color-scheme:dark){:root{--bg:#10191a;--c:#18262a;--t:#e7f0ee;--m:#93a5a3;--b:#2a3c3f}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--t);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{background:var(--g);color:#fff;padding:16px;text-align:center}header h1{margin:0;font-size:18px}header p{margin:4px 0 0;font-size:13px;opacity:.85}
+main{padding:12px;max-width:640px;margin:auto}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}
+h2{font-size:15px;margin:0 0 8px}
+textarea,input{width:100%;font:inherit;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--bg);color:var(--t)}
+textarea{min-height:120px;resize:vertical}
+button{font:inherit;border:0;border-radius:8px;padding:10px 14px;background:var(--g);color:#fff;cursor:pointer}
+button.o{background:transparent;color:var(--g);border:1px solid var(--g)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
+.chip{flex:none;font-size:12px;padding:6px 10px}
+.seg button{background:transparent;color:var(--g);border:1px solid var(--g)}.seg button.on{background:var(--g);color:#fff}
+.item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--b)}
+.item:last-child{border:0}.item .nm{flex:1}.item small{color:var(--m);display:block;direction:ltr;text-align:right}
+.item.sent .nm{opacity:.55}.ok{color:var(--g);font-size:12px}
+.x{background:transparent;color:var(--m);padding:4px 8px;flex:none}
+.sm{flex:none;padding:6px 10px;font-size:13px}
+.bar{position:sticky;bottom:0;background:var(--bg);padding:8px 0}
+.bar button{width:100%;padding:14px;font-size:16px}
+.note{font-size:12px;color:var(--m);margin:6px 0 0}
+</style></head><body>
+<header><h1>مدرسة السلام الابتدائية</h1><p>إرسال مستجدات الإدارة إلى أولياء الأمور</p></header>
+<main>
+<div class="card"><h2>نص الرسالة</h2>
+<div class="row" id="tpl" style="margin-bottom:8px"></div>
+<textarea id="msg"></textarea>
+<p class="note">اكتب {الاسم} ليُستبدل باسم التلميذ(ة) عند الإرسال.</p></div>
+<div class="card"><h2>طريقة الإرسال</h2>
+<div class="row seg"><button id="bs" class="on">رسالة نصية SMS</button><button id="bw">واتساب</button></div></div>
+<div class="card"><div class="row" style="margin-bottom:6px"><h2 style="flex:2;margin:0">الأولياء (<span id="cnt"></span>)</h2>
+<button class="o sm" id="all">تحديد الكل</button><button class="o sm" id="none">إلغاء</button><button class="o sm" id="rst">تصفير</button><button class="o sm" id="del">حذف الكل</button></div>
+<div id="list"></div></div>
+<div class="card"><h2>إضافة ولي أمر</h2><div class="row"><input id="an" placeholder="اسم التلميذ(ة)"><input id="ap" placeholder="رقم الهاتف" inputmode="tel" dir="ltr"></div>
+<button id="add" style="margin-top:8px;width:100%">إضافة</button></div>
+<div class="card"><h2>استيراد قائمة</h2>
+<input type="file" id="fi" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods,.vcf" multiple style="display:none">
+<button class="o" style="width:100%" id="fb">اختيار ملف (Excel / CSV / VCF / نص)</button>
+<p class="note">يكفي أن يحتوي الملف على اسم ورقم هاتف في كل سطر، بأي ترتيب للأعمدة، ويُتجاهل سطر العناوين تلقائيًا.</p>
+<textarea id="pt" placeholder="أو الصق هنا قائمة: اسم ورقم في كل سطر" style="min-height:80px;margin-top:8px"></textarea>
+<button id="pb" style="margin-top:8px;width:100%">إضافة من النص</button></div>
+</main>
+<div class="bar"><main style="padding:0 12px"><button id="go">إرسال إلى التالي</button></main></div>
+<script src="xlsx.mini.min.js"></script>
+<script>
+const DEF=[];
+const $=id=>document.getElementById(id);
+const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let C=ld('c',DEF).map(x=>({...x,on:x.on!==false}));let sent=ld('s',{});let ch=ld('ch','sms');
+const T=['السلام عليكم، ولي أمر التلميذ(ة) {الاسم}. تُخبركم إدارة مدرسة السلام الابتدائية بـ: ',
+'تذكير: يرجى من ولي أمر التلميذ(ة) {الاسم} الحضور إلى المؤسسة يوم ... على الساعة ...',
+'نُعلمكم أن الدراسة ستكون معلّقة يوم ... وتُستأنف يوم ... مدرسة السلام الابتدائية.'];
+$('msg').value=ld('m',T[0]);
+['استدعاء عام','حضور الولي','تعليق الدراسة'].forEach((l,i)=>{const b=document.createElement('button');b.className='o chip';b.textContent=l;b.onclick=()=>{$('msg').value=T[i];sv('m',T[i])};$('tpl').appendChild(b)});
+$('msg').oninput=()=>sv('m',$('msg').value);
+const norm=p=>{p=p.replace(/\D/g,'');if(p.startsWith('00212'))p=p.slice(5);else if(p.startsWith('212'))p=p.slice(3);else if(p.startsWith('0'))p=p.slice(1);return p};
+function save(){sv('c',C);sv('s',sent)}
+function render(){
+ $('bs').className=ch=='sms'?'on':'';$('bw').className=ch=='wa'?'on':'';
+ $('cnt').textContent=C.filter(x=>x.on).length+'/'+C.length;
+ const L=$('list');L.innerHTML=C.length?'':'<p class="note">لا يوجد أولياء بعد. أضفهم يدويًا أو استورد ملفًا.</p>';
+ C.forEach((x,i)=>{const d=document.createElement('div');d.className='item'+(sent[x.p]?' sent':'');
+  d.innerHTML='<input type="checkbox" style="width:auto"'+(x.on?' checked':'')+'><div class="nm">'+esc(x.n)+'<small>'+esc(x.p)+'</small>'+(sent[x.p]?'<span class="ok">✓ تم فتح الرسالة</span>':'')+'</div><button class="o sm">إرسال</button><button class="x">✕</button>';
+  const [cb,,s,r]=[d.children[0],0,d.children[2],d.children[3]];
+  cb.onchange=()=>{x.on=cb.checked;save();render()};s.onclick=()=>send(x);
+  r.onclick=()=>{if(confirm('حذف '+x.n+'؟')){C.splice(i,1);save();render()}};L.appendChild(d)});
+ const left=C.filter(x=>x.on&&!sent[x.p]).length;
+ $('go').textContent=left?'إرسال إلى التالي (المتبقي '+left+')':'تم الإرسال للجميع ✓';$('go').disabled=!left}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function send(x){
+ const m=$('msg').value.replace(/\{الاسم\}/g,x.n),n=norm(x.p);
+ if(!m.trim())return alert('اكتب نص الرسالة أولاً');
+ sent[x.p]=1;save();render();
+ location.href=ch=='sms'?'sms:+212'+n+'?body='+encodeURIComponent(m):'https://wa.me/212'+n+'?text='+encodeURIComponent(m)}
+$('go').onclick=()=>{const x=C.find(x=>x.on&&!sent[x.p]);if(x)send(x)};
+$('bs').onclick=()=>{ch='sms';sv('ch',ch);render()};$('bw').onclick=()=>{ch='wa';sv('ch',ch);render()};
+$('all').onclick=()=>{C.forEach(x=>x.on=true);save();render()};$('none').onclick=()=>{C.forEach(x=>x.on=false);save();render()};
+$('rst').onclick=()=>{sent={};save();render()};
+$('add').onclick=()=>{const n=$('an').value.trim(),p=$('ap').value.trim();
+ if(!n||!/^(\+?212|0)?[567]\d{8}$/.test(p.replace(/[\s.-]/g,'')))return alert('تحقق من الاسم ورقم الهاتف');
+ C.push({n,p:'0'+norm(p),on:true});$('an').value=$('ap').value='';save();render()};
+const PH=/^(?:\+?212|00212|0)?[567]\d{8}$/;
+const isPh=s=>PH.test(String(s).replace(/[\s.\-()\u200e\u200f]/g,''));
+function addList(list){let a=0,d=0;const have=new Set(C.map(x=>x.p));
+ list.forEach(([n,p])=>{const q='0'+norm(String(p));if(have.has(q)){d++;return}have.add(q);C.push({n:String(n||'').trim()||q,p:q,on:true});a++});
+ save();render();alert(a?'تمت إضافة '+a+' ولي(ة) أمر'+(d?' (مكرر تم تجاهله: '+d+')':''):'لم يتم العثور على أرقام هاتف صالحة جديدة')}
+function fromRows(rows){const out=[];rows.forEach(r=>{r=(r||[]).map(c=>String(c==null?'':c).trim()).filter(Boolean);
+ const i=r.findIndex(isPh);if(i<0)return;
+ out.push([r.filter((c,j)=>j!=i&&!/^[\d\s+.\-]+$/.test(c)).join(' '),r[i]])});return out}
+function fromText(t){const rows=[];t.split(/\r?\n/).forEach(l=>{if(!l.trim())return;
+ let c=l.split(/[,;\t]/).map(s=>s.replace(/^"|"$/g,'').trim());
+ if(!c.some(isPh)){const m=l.match(/(?:\+212|00212|0)?[\s.-]?[567](?:[\s.-]?\d){8}/);if(m)c=[l.replace(m[0],' ').replace(/[,;"\t]+/g,' ').trim(),m[0]]}
+ rows.push(c)});return fromRows(rows)}
+function fromVcf(t){const rows=[];t.split(/END:VCARD/i).forEach(b=>{const fn=(b.match(/^FN[^:]*:(.*)$/mi)||[])[1]||'';
+ const p=[...b.matchAll(/^TEL[^:]*:(.*)$/gmi)].map(m=>m[1].trim()).find(isPh);if(p)rows.push([fn.trim(),p])});return rows}
+async function readFile(f){const ext=f.name.split('.').pop().toLowerCase();const buf=await f.arrayBuffer();
+ if(['xlsx','xls','ods'].includes(ext)){if(!window.XLSX)return alert('تعذّر تحميل مكتبة Excel');
+  const wb=XLSX.read(buf,{type:'array'});let rows=[];
+  wb.SheetNames.forEach(s=>{rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[s],{header:1,raw:false,defval:''}))});
+  return addList(fromRows(rows))}
+ let t;try{t=new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){t=new TextDecoder('windows-1256').decode(buf)}
+ t=t.replace(/^\uFEFF/,'');addList(ext=='vcf'?fromVcf(t):fromText(t))}
+$('fb').onclick=()=>$('fi').click();
+$('fi').onchange=async e=>{for(const f of e.target.files){try{await readFile(f)}catch(x){alert('تعذّرت قراءة الملف: '+f.name)}}e.target.value=''};
+$('pb').onclick=()=>{addList(fromText($('pt').value));$('pt').value=''};
+$('del').onclick=()=>{if(confirm('حذف جميع الأولياء من القائمة؟')){C=[];sent={};save();render()}};
+render();
+</script></body></html>
